@@ -3,46 +3,45 @@ import torch.nn as nn
 import torch.optim as optim 
 import torch.nn.functional as F    #relu, tanh => activation func.s
 from torch.utils.data import DataLoader 
+import torchvision
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-
-#doing for MNIST dataset so in_channels=1 because greayscale
-
-class CNN(nn.Module):
-    def __init__(self, in_channels=1, num_classes=10):
-        super(CNN,self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=1,out_channels=8,kernel_size=(3,3),stride=(1,1), padding=(1,1))      #same convolution
-        self.pool = nn.MaxPool2d(kernel_size=(2,2), stride = (2,2))
-        self.conv2 = nn.Conv2d(in_channels=8,out_channels=16, kernel_size=(3,3), stride=(1,1), padding=(1,1))
-        self.fc1 = nn.Linear(16*7*7, num_classes)       # 16*7*7 because we are applying 2 maxpooling layers in forward pass
-
-    def forward(self,x):
-        x = F.relu(self.conv1(x))
-        x = self.pool(x)
-        x = F.relu(self.conv2(x))
-        x = self.pool(x)
-        x = x.reshape(x.shape[0],-1)
-        x = self.fc1(x)
-        return x
+import sys
 
 #device
 device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
 
 #Hyperparameters
-in_channels =1
+in_channels =3      # 3 for RBG images
 num_classes =10
-learning_rate = 0.001
+learning_rate = 1e-3
 batch_size =64
 num_epochs =1
 
-# Load data
-train_dataset = datasets.MNIST(root= 'dataset/', train=True, transform=transforms.ToTensor(), download=True)
-train_loader = DataLoader (dataset=train_dataset, batch_size=batch_size, shuffle=True)
-test_dataset = datasets.MNIST(root='dataset/',train=False,transform=transforms.ToTensor(), download=True)
-test_loader = DataLoader (dataset=test_dataset,batch_size=batch_size, shuffle=True)
+class Identity(nn.Module):      # To pass avgpool layer so it doesn't affects features, Identity = Do Nothing
+    def __init__(self) :
+       super(Identity,self).__init__()
+       
+    def forward(self,x):
+        return x
+    
+#load the pretrained-model
+model = torchvision.models.vgg16(weights=torchvision.models.VGG16_Weights.DEFAULT)  # you can use pretrained=True but this way you'll get the most updated weights
+#freezing top layers to not train the whole network
+for param in model.parameters():
+    param.requires_grad=False
+  
+model.avgpool = Identity()
+model.classifier = nn.Sequential(nn.Linear(512,100),
+                                 nn.ReLU(),
+                                 nn.Linear(100,10))
 
-#NETWORK
-model = CNN().to(device)
+model.to(device)
+
+train_dataset = datasets.CIFAR10(root= 'dataset/', train=True, transform=transforms.ToTensor(), download=True)
+train_loader = DataLoader (dataset=train_dataset, batch_size=batch_size, shuffle=True)
+test_dataset = datasets.CIFAR10(root='dataset/',train=False,transform=transforms.ToTensor(), download=True)
+test_loader = DataLoader (dataset=test_dataset,batch_size=batch_size, shuffle=True)
 
 #loss and optimizer
 criterion = nn.CrossEntropyLoss()
@@ -93,15 +92,3 @@ def check_accuracy(loader,model):
         
 check_accuracy(train_loader,model)
 check_accuracy(test_loader,model)
-
-
-
-
-
-
-
-
-
-
-
-device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
